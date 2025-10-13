@@ -4,6 +4,7 @@ require '../../db/db.php';
 
 if (isset($_SESSION['login'])) {
     header('location: ../index.php');
+    exit;
 }
 
 if (isset($_POST['login'])) {
@@ -42,7 +43,9 @@ if (isset($_POST['login'])) {
         <br>
         <input type="password" name="password" placeholder="password">
         <br>
-        <button name="login">login</button>
+        <button name="login" type="submit">login</button>
+        <br>
+        <a href="register.php">daftar</a>
     </form>
 </body>
 </html>
