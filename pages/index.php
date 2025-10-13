@@ -102,7 +102,7 @@ $user_id = $_SESSION['user_id']; // pastikan saat login disimpan user_id
                                 <td>Rp<?php echo number_format($row['nominal'], 0, ',', '.'); ?></td>
                                 <td><?php echo htmlspecialchars($row['keterangan']); ?></td>
                                 <td>
-                                    <form action="api/transactions/hapus-tabungan.php" method="POST" style="display:inline">
+                                    <form action="api/transactions/delete-tabungan.php" method="POST" style="display:inline">
                                         <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
                                         <button type="submit" class="btn btn-sm btn-danger">Hapus</button>
                                     </form>
