@@ -70,10 +70,46 @@ $tx_colors = [];
 $no = 1;
 
 while ($row = $result_tx->fetch_assoc()) {
-    $tx_labels[] = 'Tx ' . $no++;
+    $tx_labels[] = date('d M Y H:i', strtotime($row['tanggal']));
     $tx_values[] = (int)$row['nominal'] * ($row['jenis'] == 'pengeluaran' ? -1 : 1);
     $tx_colors[] = ($row['jenis'] == 'pemasukan') ? 'rgba(75, 192, 75, 0.8)' : 'rgba(255, 99, 132, 0.8)';
 }
+
+// ====== HITUNG PERUBAHAN DARI HARI SEBELUMNYA ======
+$query_change = "
+    SELECT DATE(tanggal) as tgl,
+        SUM(CASE WHEN jenis='pemasukan' THEN nominal ELSE 0 END) -
+        SUM(CASE WHEN jenis='pengeluaran' THEN nominal ELSE 0 END) AS saldo_harian
+    FROM tb_transaksi
+    WHERE user_id = ?
+    GROUP BY DATE(tanggal)
+    ORDER BY DATE(tanggal) DESC
+    LIMIT 2";
+$stmt_change = $db->prepare($query_change);
+$stmt_change->bind_param("i", $user_id);
+$stmt_change->execute();
+$result_change = $stmt_change->get_result();
+
+$today_total = 0;
+$yesterday_total = 0;
+
+if ($result_change->num_rows > 0) {
+    $row_today = $result_change->fetch_assoc();
+    $today_total = (float)$row_today['saldo_harian'];
+    if ($result_change->num_rows > 1) {
+        $row_yesterday = $result_change->fetch_assoc();
+        $yesterday_total = (float)$row_yesterday['saldo_harian'];
+    }
+}
+
+// Hitung persentase perubahan
+$percentage_change = 0;
+if ($yesterday_total != 0) {
+    $percentage_change = (($today_total - $yesterday_total) / $yesterday_total) * 100;
+} elseif ($today_total != 0) {
+    $percentage_change = 100;
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -99,7 +135,24 @@ while ($row = $result_tx->fetch_assoc()) {
             <div class="card-body text-center">
                 <h4><?php echo htmlspecialchars($target_keterangan); ?></h4>
                 <h5 class="text-muted mb-2">(Target Celengan)</h5>
-                <h2>Rp<?php echo number_format($total_tabungan, 0, ',', '.'); ?></h2>
+                <h2>
+                    Rp<?php echo number_format($total_tabungan, 0, ',', '.'); ?>
+                </h2>
+
+                <?php if ($percentage_change > 0): ?>
+                    <p class="text-success fw-bold">
+                        ▲ <?php echo round($percentage_change, 1); ?>% dari hari sebelumnya
+                    </p>
+                <?php elseif ($percentage_change < 0): ?>
+                    <p class="text-danger fw-bold">
+                        ▼ <?php echo round(abs($percentage_change), 1); ?>% dari hari sebelumnya
+                    </p>
+                <?php else: ?>
+                    <p class="text-muted">
+                        Tidak ada perubahan dari hari sebelumnya
+                    </p>
+                <?php endif; ?>
+
 
                 <?php if ($target_nominal > 0): ?>
                     <p class="mt-2 mb-1">Target: Rp<?php echo number_format($target_nominal, 0, ',', '.'); ?></p>
@@ -195,6 +248,7 @@ while ($row = $result_tx->fetch_assoc()) {
         </div>
     </div>
 
+    
     <script>
         const ctx1 = document.getElementById('barChart').getContext('2d');
         new Chart(ctx1, {
