@@ -8,7 +8,58 @@ if (!isset($_SESSION['login'])) {
 }
 
 $username = $_SESSION['username'];
-$user_id = $_SESSION['user_id']; // pastikan saat login disimpan user_id
+$user_id = $_SESSION['user_id'];
+
+// ====== TOTAL TABUNGAN ======
+$query = "SELECT 
+            SUM(CASE WHEN jenis='pemasukan' THEN nominal ELSE 0 END) -
+            SUM(CASE WHEN jenis='pengeluaran' THEN nominal ELSE 0 END) AS total 
+          FROM tb_transaksi 
+          WHERE user_id = ?";
+$stmt = $db->prepare($query);
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$result = $stmt->get_result()->fetch_assoc();
+$total_tabungan = $result['total'] ?? 0;
+
+// ====== TARGET TABUNGAN ======
+$query_target = "SELECT * FROM tb_target WHERE user_id = ? ORDER BY created_at DESC LIMIT 1";
+$stmt_target = $db->prepare($query_target);
+$stmt_target->bind_param("i", $user_id);
+$stmt_target->execute();
+$result_target = $stmt_target->get_result()->fetch_assoc();
+
+$target_nominal = $result_target['target_nominal'] ?? 0;
+$target_keterangan = $result_target['keterangan'] ?? '';
+$persentase = ($target_nominal > 0) ? min(($total_tabungan / $target_nominal) * 100, 100) : 0;
+
+// ====== DATA UNTUK CHART ======
+$query_chart = "SELECT DATE(tanggal) as tgl, 
+                SUM(CASE WHEN jenis='pemasukan' THEN nominal ELSE -nominal END) AS perubahan
+                FROM tb_transaksi 
+                WHERE user_id = ?
+                GROUP BY DATE(tanggal)
+                ORDER BY DATE(tanggal)";
+$stmt_chart = $db->prepare($query_chart);
+$stmt_chart->bind_param("i", $user_id);
+$stmt_chart->execute();
+$result_chart = $stmt_chart->get_result();
+
+// ====== HITUNG TOTAL KUMULATIF HARIAN ======
+$dates = [];
+$balances = [];
+$total = 0;
+while ($row = $result_chart->fetch_assoc()) {
+    $total += $row['perubahan'];
+    $dates[] = date('d M', strtotime($row['tgl']));
+    $balances[] = $total;
+}
+
+// Tambahkan titik awal (Rp0)
+if (!empty($dates) && !empty($balances)) {
+    array_unshift($dates, 'Awal');
+    array_unshift($balances, 0);
+}
 ?>
 
 <!DOCTYPE html>
@@ -19,39 +70,65 @@ $user_id = $_SESSION['user_id']; // pastikan saat login disimpan user_id
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Celengan Digital</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
 </head>
 
 <body>
     <div class="container py-4">
-
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2>Hai, <?php echo htmlspecialchars($username); ?></h2>
             <a href="auth/logout.php" class="btn btn-danger btn-sm">Logout</a>
         </div>
 
-        <?php
-        // Hitung total tabungan
-        $query = "SELECT 
-                SUM(CASE WHEN jenis='pemasukan' THEN nominal ELSE 0 END) -
-                SUM(CASE WHEN jenis='pengeluaran' THEN nominal ELSE 0 END) AS total 
-              FROM tb_transaksi 
-              WHERE user_id = ?";
-        $stmt = $db->prepare($query);
-        $stmt->bind_param("i", $user_id);
-        $stmt->execute();
-        $result = $stmt->get_result()->fetch_assoc();
-        $total_tabungan = $result['total'] ?? 0;
-        ?>
-
-        <div class="card bg-secondary mb-4">
+        <!-- CARD: TOTAL & TARGET TABUNGAN -->
+        <div class="card mb-4">
             <div class="card-body text-center">
                 <h4>Total Tabungan</h4>
                 <h2>Rp<?php echo number_format($total_tabungan, 0, ',', '.'); ?></h2>
+
+                <?php if ($target_nominal > 0): ?>
+                    <p class="mt-2 mb-1">
+                        Target: Rp<?php echo number_format($target_nominal, 0, ',', '.'); ?>
+                        <?php if ($target_keterangan): ?>
+                            <br><small class="text-muted"><?php echo htmlspecialchars($target_keterangan); ?></small>
+                        <?php endif; ?>
+                    </p>
+                    <div class="progress" style="height: 20px;">
+                        <div class="progress-bar bg-success" 
+                             role="progressbar" 
+                             style="width: <?php echo $persentase; ?>%;" 
+                             aria-valuenow="<?php echo $persentase; ?>" 
+                             aria-valuemin="0" 
+                             aria-valuemax="100">
+                            <?php echo round($persentase, 1); ?>%
+                        </div>
+                    </div>
+                <?php else: ?>
+                    <p class="text-muted mt-2">Belum ada target ditetapkan.</p>
+                <?php endif; ?>
             </div>
         </div>
 
-        <!-- Form Tambah Transaksi -->
-        <div class="card bg-secondary mb-4">
+        <!-- FORM: TAMBAH / UBAH TARGET -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <form action="api/target/save-target.php" method="POST" class="row g-2">
+                    <div class="col-md-4">
+                        <input type="number" name="target_nominal" class="form-control" placeholder="Nominal Target" required>
+                    </div>
+                    <div class="col-md-6">
+                        <input type="text" name="keterangan" class="form-control" placeholder="Keterangan (opsional)">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-success w-100">Simpan Target</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- FORM: TAMBAH TRANSAKSI -->
+        <div class="card mb-4">
             <div class="card-body">
                 <form action="api/transactions/add-tabungan.php" method="POST" class="row g-2">
                     <div class="col-md-3">
@@ -73,11 +150,19 @@ $user_id = $_SESSION['user_id']; // pastikan saat login disimpan user_id
             </div>
         </div>
 
-        <!-- Daftar Transaksi -->
-        <div class="card bg-secondary">
+        <!-- CHART: PROGRESS TABUNGAN -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="mb-3 text-center">Progress Celengan</h5>
+                <canvas id="progressChart" height="120"></canvas>
+            </div>
+        </div>
+
+        <!-- TABEL: RIWAYAT TRANSAKSI -->
+        <div class="card">
             <div class="card-body">
                 <h5 class="mb-3">Riwayat Transaksi</h5>
-                <table class="table table-dark table-striped table-sm align-middle">
+                <table class="table table-striped table-sm align-middle">
                     <thead>
                         <tr>
                             <th>Tanggal</th>
@@ -115,6 +200,59 @@ $user_id = $_SESSION['user_id']; // pastikan saat login disimpan user_id
         </div>
 
     </div>
-</body>
 
+    <!-- SCRIPT: CHART.JS -->
+    <script>
+        const ctx = document.getElementById('progressChart').getContext('2d');
+        const progressChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: <?php echo json_encode($dates); ?>,
+                datasets: [{
+                    label: 'Total Tabungan (Rp)',
+                    data: <?php echo json_encode($balances); ?>,
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'Rp' + value.toLocaleString('id-ID');
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    annotation: {
+                        annotations: {
+                            targetLine: {
+                                type: 'line',
+                                yMin: <?php echo $target_nominal; ?>,
+                                yMax: <?php echo $target_nominal; ?>,
+                                borderColor: 'rgba(255, 99, 132, 0.8)',
+                                borderWidth: 2,
+                                label: {
+                                    enabled: <?php echo ($target_nominal > 0) ? 'true' : 'false'; ?>,
+                                    content: 'Target: Rp<?php echo number_format($target_nominal, 0, ',', '.'); ?>',
+                                    position: 'start'
+                                }
+                            }
+                        }
+                    },
+                    legend: { display: false }
+                }
+            }
+        });
+    </script>
+
+</body>
 </html>
