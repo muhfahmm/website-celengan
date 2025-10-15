@@ -1,6 +1,6 @@
 <?php
 session_start();
-require '../../db/db.php';
+require '../../../db/db.php';
 
 if (!isset($_SESSION['login'])) {
     header('location: ../../auth/login.php');
