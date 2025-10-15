@@ -29,8 +29,9 @@ $stmt_target->bind_param("i", $user_id);
 $stmt_target->execute();
 $result_target = $stmt_target->get_result()->fetch_assoc();
 
+$target_id = $result_target['id'] ?? null;
 $target_nominal = $result_target['target_nominal'] ?? 0;
-$target_keterangan = $result_target['keterangan'] ?? '';
+$target_keterangan = $result_target['keterangan'] ?? 'Celengan Tanpa Nama';
 $persentase = ($target_nominal > 0) ? min(($total_tabungan / $target_nominal) * 100, 100) : 0;
 
 // ====== DATA UNTUK CHART ======
@@ -84,15 +85,13 @@ if (!empty($dates) && !empty($balances)) {
         <!-- CARD: TOTAL & TARGET TABUNGAN -->
         <div class="card mb-4">
             <div class="card-body text-center">
-                <h4>Total Tabungan</h4>
+                <h4><?php echo htmlspecialchars($target_keterangan); ?></h4>
+                <h5 class="text-muted mb-2">(Target Celengan)</h5>
                 <h2>Rp<?php echo number_format($total_tabungan, 0, ',', '.'); ?></h2>
 
                 <?php if ($target_nominal > 0): ?>
                     <p class="mt-2 mb-1">
                         Target: Rp<?php echo number_format($target_nominal, 0, ',', '.'); ?>
-                        <?php if ($target_keterangan): ?>
-                            <br><small class="text-muted"><?php echo htmlspecialchars($target_keterangan); ?></small>
-                        <?php endif; ?>
                     </p>
                     <div class="progress" style="height: 20px;">
                         <div class="progress-bar bg-success" 
@@ -113,17 +112,30 @@ if (!empty($dates) && !empty($balances)) {
         <!-- FORM: TAMBAH / UBAH TARGET -->
         <div class="card mb-4">
             <div class="card-body">
-                <form action="api/target/save-target.php" method="POST" class="row g-2">
+                <h5 class="mb-3">Atur Target & Nama Celengan</h5>
+                <form action="api/target/save-target.php" method="POST" class="row g-2 mb-2">
                     <div class="col-md-4">
                         <input type="number" name="target_nominal" class="form-control" placeholder="Nominal Target" required>
                     </div>
                     <div class="col-md-6">
-                        <input type="text" name="keterangan" class="form-control" placeholder="Keterangan (opsional)">
+                        <input type="text" name="keterangan" class="form-control" placeholder="Nama atau Tujuan Celengan">
                     </div>
                     <div class="col-md-2">
                         <button type="submit" class="btn btn-success w-100">Simpan Target</button>
                     </div>
                 </form>
+
+                <?php if ($target_id): ?>
+                <form action="api/target/update-nama.php" method="POST" class="row g-2">
+                    <input type="hidden" name="target_id" value="<?php echo $target_id; ?>">
+                    <div class="col-md-10">
+                        <input type="text" name="nama_baru" class="form-control" placeholder="Ubah Nama Celengan" required>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-warning w-100">Ubah Nama</button>
+                    </div>
+                </form>
+                <?php endif; ?>
             </div>
         </div>
 
